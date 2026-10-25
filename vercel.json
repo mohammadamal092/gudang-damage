@@ -30,8 +30,4 @@
     "SESSION_DRIVER": "cookie"
   },
   "outputDirectory": "public"
-   "routes": [
-     { "handle": "filesystem" },
-     { "src": "/(.*)", "dest": "/api/index.php" }
-   ]
 }
