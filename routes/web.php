@@ -26,5 +26,10 @@ Route::middleware('auth')->group(function () {
     Route::resource('categories', CategoryController::class)->except('show');
     Route::resource('locations', WarehouseLocationController::class)->except('show');
     Route::resource('items', ItemController::class)->except('show');
+
+    // Rute khusus harus didaftarkan SEBELUM resource agar tidak tertangkap {damage}.
+    Route::get('damages/export', [DamageController::class, 'export'])->name('damages.export');
+    Route::get('damages/{damage}/print', [DamageController::class, 'print'])->name('damages.print');
+    Route::patch('damages/{damage}/status', [DamageController::class, 'updateStatus'])->name('damages.status');
     Route::resource('damages', DamageController::class);
 });

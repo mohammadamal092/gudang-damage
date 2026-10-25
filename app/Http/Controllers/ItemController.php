@@ -23,6 +23,7 @@ class ItemController extends Controller
                 });
             })
             ->when($request->filled('category_id'), fn ($query) => $query->where('category_id', $request->integer('category_id')))
+            ->when($request->boolean('low'), fn ($query) => $query->whereColumn('stock', '<=', 'min_stock'))
             ->latest()
             ->paginate(10)
             ->withQueryString();

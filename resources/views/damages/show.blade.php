@@ -1,37 +1,83 @@
 @extends('layouts.app')
-@section('title', 'Detail '.$damage->ticket_code)
+@section('title', $damage->ticket_code)
+@section('subtitle', 'Detail laporan barang damage')
+
+@section('actions')
+    <a href="{{ route('damages.index') }}" class="btn btn-soft"><i class="bi bi-arrow-left me-1"></i><span class="d-none d-sm-inline">Kembali</span></a>
+    <a href="{{ route('damages.print', $damage) }}" target="_blank" class="btn btn-soft"><i class="bi bi-printer me-1"></i><span class="d-none d-sm-inline">Cetak</span></a>
+    <a href="{{ route('damages.edit', $damage) }}" class="btn btn-accent"><i class="bi bi-pencil me-1"></i><span class="d-none d-sm-inline">Ubah</span></a>
+@endsection
+
 @section('content')
 <div class="row g-3">
     <div class="col-lg-8">
-        <div class="card p-4">
-            <div class="d-flex justify-content-between align-items-start mb-3">
+        <div class="card p-4 mb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
                 <div>
-                    <div class="text-muted small">{{ $damage->ticket_code }}</div>
-                    <h2 class="h4">{{ $damage->item->name }}</h2>
+                    <div class="text-muted small tabular">{{ $damage->ticket_code }}</div>
+                    <h2 class="h4 fw-bold mb-2">{{ $damage->item->name }}</h2>
                     <span class="badge {{ $damage->badgeClass() }}">{{ $damage->statusLabel() }}</span>
+                    @if ($damage->isOpen() && $damage->ageInDays() > 3)
+                        <span class="small text-danger ms-2"><i class="bi bi-clock-history"></i> terbuka {{ $damage->ageInDays() }} hari</span>
+                    @endif
                 </div>
-                <a href="{{ route('damages.edit', $damage) }}" class="btn btn-accent">Ubah</a>
+                <div class="text-end">
+                    <div class="text-muted small">Jumlah rusak</div>
+                    <div class="fs-2 fw-bold tabular lh-1">{{ $damage->quantity }} <span class="fs-6 fw-medium text-muted">{{ $damage->item->unit }}</span></div>
+                </div>
             </div>
-            <dl class="row mb-0">
-                <dt class="col-sm-4">SKU</dt><dd class="col-sm-8">{{ $damage->item->sku }}</dd>
-                <dt class="col-sm-4">Kategori</dt><dd class="col-sm-8">{{ $damage->item->category->name }}</dd>
-                <dt class="col-sm-4">Lokasi temuan</dt><dd class="col-sm-8">{{ $damage->location->name }}</dd>
-                <dt class="col-sm-4">Jenis kerusakan</dt><dd class="col-sm-8">{{ $damage->typeLabel() }}</dd>
-                <dt class="col-sm-4">Jumlah</dt><dd class="col-sm-8">{{ $damage->quantity }} {{ $damage->item->unit }}</dd>
-                <dt class="col-sm-4">Tanggal</dt><dd class="col-sm-8">{{ $damage->reported_at->translatedFormat('d M Y') }}</dd>
-                <dt class="col-sm-4">Pelapor</dt><dd class="col-sm-8">{{ $damage->reporter->name }}</dd>
-                <dt class="col-sm-4">Keterangan</dt><dd class="col-sm-8">{{ $damage->description ?: '-' }}</dd>
-                <dt class="col-sm-4">Catatan penanganan</dt><dd class="col-sm-8">{{ $damage->handling_notes ?: '-' }}</dd>
-            </dl>
+
+            <div class="detail-grid mb-4">
+                <div><div class="k">SKU</div><div class="v">{{ $damage->item->sku }}</div></div>
+                <div><div class="k">Kategori</div><div class="v">{{ $damage->item->category->name }}</div></div>
+                <div><div class="k">Lokasi temuan</div><div class="v">{{ $damage->location->name }}</div></div>
+                <div><div class="k">Jenis kerusakan</div><div class="v">{{ $damage->typeLabel() }}</div></div>
+                <div><div class="k">Tanggal temuan</div><div class="v">{{ $damage->reported_at->translatedFormat('d F Y') }}</div></div>
+                <div><div class="k">Pelapor</div><div class="v">{{ $damage->reporter->name }}</div></div>
+            </div>
+
+            <div class="mb-3">
+                <div class="k text-uppercase text-muted fw-bold" style="font-size:.72rem;letter-spacing:.08em">Keterangan</div>
+                <p class="mb-0">{{ $damage->description ?: '—' }}</p>
+            </div>
+            <div>
+                <div class="k text-uppercase text-muted fw-bold" style="font-size:.72rem;letter-spacing:.08em">Catatan penanganan</div>
+                <p class="mb-0">{{ $damage->handling_notes ?: '—' }}</p>
+            </div>
         </div>
     </div>
+
     <div class="col-lg-4">
+        {{-- Ubah status cepat --}}
+        <div class="card p-3 mb-3">
+            <h2 class="card-title-sm mb-3"><i class="bi bi-lightning-charge text-warning me-1"></i>Tindak lanjut cepat</h2>
+            <form method="POST" action="{{ route('damages.status', $damage) }}">
+                @csrf @method('PATCH')
+                <div class="mb-2">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        @foreach (\App\Models\Damage::STATUSES as $key => $label)
+                            <option value="{{ $key }}" @selected($damage->status === $key)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Catatan penanganan</label>
+                    <textarea name="handling_notes" rows="3" class="form-control" placeholder="Mis. dikirim ke vendor, diganti unit baru…">{{ old('handling_notes', $damage->handling_notes) }}</textarea>
+                </div>
+                <button class="btn btn-navy w-100"><i class="bi bi-check2 me-1"></i>Simpan status</button>
+                <div class="form-text">Stok otomatis kembali jika status “Diperbaiki”.</div>
+            </form>
+        </div>
+
         <div class="card p-3">
-            <h2 class="h6">Foto</h2>
+            <h2 class="card-title-sm mb-3">Foto kerusakan</h2>
             @if ($damage->photo_path)
-                <img src="{{ asset('storage/'.$damage->photo_path) }}" class="img-fluid rounded" alt="Foto damage">
+                <a href="{{ asset('storage/'.$damage->photo_path) }}" target="_blank" class="photo-frame d-block">
+                    <img src="{{ asset('storage/'.$damage->photo_path) }}" alt="Foto damage">
+                </a>
             @else
-                <p class="text-muted mb-0">Tidak ada foto.</p>
+                <div class="empty-state py-4"><i class="bi bi-image"></i>Tidak ada foto.</div>
             @endif
         </div>
     </div>

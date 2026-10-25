@@ -1,5 +1,8 @@
 @extends('layouts.app')
 @section('title', $category->exists ? 'Ubah Kategori' : 'Tambah Kategori')
+@section('actions')
+    <a href="{{ route('categories.index') }}" class="btn btn-soft"><i class="bi bi-arrow-left me-1"></i><span class="d-none d-sm-inline">Kembali</span></a>
+@endsection
 @section('content')
 <div class="card p-4 col-lg-7">
     <form method="POST" action="{{ $category->exists ? route('categories.update', $category) : route('categories.store') }}">
@@ -19,8 +22,8 @@
             <label class="form-label">Deskripsi</label>
             <textarea name="description" class="form-control" rows="3">{{ old('description', $category->description) }}</textarea>
         </div>
-        <button class="btn btn-accent">Simpan</button>
-        <a href="{{ route('categories.index') }}" class="btn btn-light">Batal</a>
+        <button class="btn btn-accent"><i class="bi bi-check2 me-1"></i>Simpan</button>
+        <a href="{{ route('categories.index') }}" class="btn btn-soft">Batal</a>
     </form>
 </div>
 @endsection

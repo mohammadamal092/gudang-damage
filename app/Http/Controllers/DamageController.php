@@ -5,35 +5,72 @@ namespace App\Http\Controllers;
 use App\Models\Damage;
 use App\Models\Item;
 use App\Models\WarehouseLocation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DamageController extends Controller
 {
     public function index(Request $request): View
     {
-        $damages = Damage::query()
+        $damages = $this->filteredQuery($request)
             ->with(['item', 'location', 'reporter'])
-            ->when($request->filled('q'), function ($query) use ($request) {
-                $q = $request->string('q')->toString();
-                $query->where(function ($inner) use ($q) {
-                    $inner->where('ticket_code', 'like', "%{$q}%")
-                        ->orWhereHas('item', function ($itemQuery) use ($q) {
-                            $itemQuery->where('name', 'like', "%{$q}%")
-                                ->orWhere('sku', 'like', "%{$q}%");
-                        });
-                });
-            })
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
-            ->latest()
+            ->latest('reported_at')
+            ->latest('id')
             ->paginate(10)
             ->withQueryString();
 
-        return view('damages.index', compact('damages'));
+        return view('damages.index', [
+            'damages' => $damages,
+            'statusCounts' => Damage::query()
+                ->selectRaw('status, COUNT(*) as total')
+                ->groupBy('status')
+                ->pluck('total', 'status'),
+        ]);
+    }
+
+    /** Ekspor CSV mengikuti filter yang sedang aktif (dibuka di Excel). */
+    public function export(Request $request): StreamedResponse
+    {
+        $query = $this->filteredQuery($request)
+            ->with(['item.category', 'location', 'reporter'])
+            ->latest('reported_at')
+            ->latest('id');
+
+        $filename = 'laporan-damage-'.now()->format('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($query) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // BOM agar Excel membaca UTF-8
+            fputcsv($out, ['Tiket', 'Tanggal', 'SKU', 'Barang', 'Kategori', 'Lokasi', 'Jenis Kerusakan', 'Jumlah', 'Satuan', 'Status', 'Pelapor', 'Keterangan', 'Catatan Penanganan']);
+
+            $query->chunk(200, function ($rows) use ($out) {
+                foreach ($rows as $d) {
+                    fputcsv($out, [
+                        $d->ticket_code,
+                        $d->reported_at->format('Y-m-d'),
+                        $d->item->sku,
+                        $d->item->name,
+                        $d->item->category->name ?? '-',
+                        $d->location->name ?? '-',
+                        $d->typeLabel(),
+                        $d->quantity,
+                        $d->item->unit,
+                        $d->statusLabel(),
+                        $d->reporter->name ?? '-',
+                        $d->description,
+                        $d->handling_notes,
+                    ]);
+                }
+            });
+
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function create(): View
@@ -46,7 +83,7 @@ class DamageController extends Controller
         $data = $this->validated($request);
         $item = Item::findOrFail($data['item_id']);
 
-        if ($data['quantity'] > $item->stock) {
+        if ($data['status'] !== 'diperbaiki' && $data['quantity'] > $item->stock) {
             return back()->withErrors(['quantity' => 'Jumlah damage melebihi stok tersedia ('.$item->stock.').'])->withInput();
         }
 
@@ -70,6 +107,14 @@ class DamageController extends Controller
         $damage->load(['item.category', 'location', 'reporter']);
 
         return view('damages.show', compact('damage'));
+    }
+
+    /** Halaman tiket siap cetak (Ctrl+P / Simpan sebagai PDF). */
+    public function print(Damage $damage): View
+    {
+        $damage->load(['item.category', 'location', 'reporter']);
+
+        return view('damages.print', compact('damage'));
     }
 
     public function edit(Damage $damage): View
@@ -112,6 +157,40 @@ class DamageController extends Controller
         return redirect()->route('damages.index')->with('success', 'Laporan damage berhasil diperbarui.');
     }
 
+    /** Ubah status (dan catatan) langsung dari halaman detail, stok ikut disesuaikan. */
+    public function updateStatus(Request $request, Damage $damage): RedirectResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in(array_keys(Damage::STATUSES))],
+            'handling_notes' => ['nullable', 'string'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($damage, $data) {
+                $item = $damage->item;
+                $wasRestored = $damage->status === 'diperbaiki';
+                $willRestore = $data['status'] === 'diperbaiki';
+
+                if (! $wasRestored && $willRestore) {
+                    // Barang pulih: kembalikan ke stok.
+                    $item->increment('stock', $damage->quantity);
+                } elseif ($wasRestored && ! $willRestore) {
+                    // Dibuka kembali: kurangi stok lagi.
+                    if ($damage->quantity > $item->stock) {
+                        throw new \RuntimeException('Stok tidak cukup untuk membuka kembali laporan ini (stok '.$item->stock.').');
+                    }
+                    $item->decrement('stock', $damage->quantity);
+                }
+
+                $damage->update($data);
+            });
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Status diubah menjadi "'.Damage::STATUSES[$data['status']].'".');
+    }
+
     public function destroy(Damage $damage): RedirectResponse
     {
         DB::transaction(function () use ($damage) {
@@ -123,6 +202,25 @@ class DamageController extends Controller
         });
 
         return redirect()->route('damages.index')->with('success', 'Laporan damage berhasil dihapus.');
+    }
+
+    private function filteredQuery(Request $request): Builder
+    {
+        return Damage::query()
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $q = $request->string('q')->toString();
+                $query->where(function ($inner) use ($q) {
+                    $inner->where('ticket_code', 'like', "%{$q}%")
+                        ->orWhereHas('item', function ($itemQuery) use ($q) {
+                            $itemQuery->where('name', 'like', "%{$q}%")
+                                ->orWhere('sku', 'like', "%{$q}%");
+                        });
+                });
+            })
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
+            ->when($request->filled('type'), fn ($query) => $query->where('damage_type', $request->string('type')->toString()))
+            ->when($request->filled('from'), fn ($query) => $query->whereDate('reported_at', '>=', $request->string('from')->toString()))
+            ->when($request->filled('to'), fn ($query) => $query->whereDate('reported_at', '<=', $request->string('to')->toString()));
     }
 
     private function restoreStock(Damage $damage): void

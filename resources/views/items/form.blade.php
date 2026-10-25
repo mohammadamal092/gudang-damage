@@ -1,5 +1,8 @@
 @extends('layouts.app')
 @section('title', $item->exists ? 'Ubah Barang' : 'Tambah Barang')
+@section('actions')
+    <a href="{{ route('items.index') }}" class="btn btn-soft"><i class="bi bi-arrow-left me-1"></i><span class="d-none d-sm-inline">Kembali</span></a>
+@endsection
 @section('content')
 <div class="card p-4">
     <form method="POST" action="{{ $item->exists ? route('items.update', $item) : route('items.store') }}">
@@ -55,8 +58,8 @@
             </div>
         </div>
         <div class="mt-4">
-            <button class="btn btn-accent">Simpan</button>
-            <a href="{{ route('items.index') }}" class="btn btn-light">Batal</a>
+            <button class="btn btn-accent"><i class="bi bi-check2 me-1"></i>Simpan</button>
+            <a href="{{ route('items.index') }}" class="btn btn-soft">Batal</a>
         </div>
     </form>
 </div>
