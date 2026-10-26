@@ -1,13 +1,11 @@
 {
   "version": 2,
-  "framework": null,
-  "outputDirectory": "public",
-  "functions": {
-    "api/index.php": { "runtime": "vercel-php@0.7.3" }
-  },
+  "builds": [
+    { "src": "api/index.php", "use": "vercel-php@0.7.3" },
+    { "src": "public/css/**", "use": "@vercel/static" }
+  ],
   "routes": [
-    { "src": "/(css|js|build|images)/(.*)", "dest": "public/$1/$2" },
-    { "handle": "filesystem" },
+    { "src": "/css/(.*)", "dest": "public/css/$1" },
     { "src": "/(.*)", "dest": "/api/index.php" }
   ],
   "env": {
@@ -23,5 +21,4 @@
     "LOG_CHANNEL": "stderr",
     "SESSION_DRIVER": "cookie"
   }
-  
 }
